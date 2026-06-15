@@ -84,7 +84,8 @@ export const useCategoryStore = defineStore('category', () => {
     const isVisible = (id: string) => visible === null || visible.has(id)
     const rows: RenderRow[] = []
 
-    const build = (parentId: string, parentName: string, depth: number) => {
+    /** 把分类拆成「可见的叶子词汇」与「可见的子分类」两组 */
+    const splitChildren = (parentId: string) => {
       const children = (childrenMap.get(parentId) ?? []).filter((c) => isVisible(c.id))
       const leaves: FlatNode[] = []
       const cats: Node[] = []
@@ -97,26 +98,64 @@ export const useCategoryStore = defineStore('category', () => {
           cats.push(child)
         }
       }
-      if (leaves.length) {
+      return { leaves, cats }
+    }
+
+    /** 收集某节点下所有可见的后代叶子词汇（兜底超过三级的数据，统一平铺） */
+    const collectLeaves = (parentId: string): FlatNode[] => {
+      const result: FlatNode[] = []
+      const walk = (pid: string) => {
+        const { leaves, cats } = splitChildren(pid)
+        for (const leaf of leaves) result.push(leaf)
+        for (const cat of cats) walk(cat.id)
+      }
+      walk(parentId)
+      return result
+    }
+
+    // 第一级：root 的直接子节点
+    const top = splitChildren(activeRootId.value)
+    if (top.leaves.length) {
+      rows.push({
+        kind: 'words',
+        key: 'w-' + activeRootId.value,
+        parentId: activeRootId.value,
+        parentName: activeRoot.value?.name ?? '',
+        depth: 0,
+        words: top.leaves,
+      })
+    }
+    for (const cat of top.cats) {
+      const catFlat = flatById.get(cat.id)
+      if (!catFlat) continue
+      rows.push({ kind: 'category', key: 'c-' + cat.id, node: catFlat, depth: 0 })
+
+      // 第二级：第一级分类的直接子节点
+      const second = splitChildren(cat.id)
+      if (second.leaves.length) {
         rows.push({
           kind: 'words',
-          key: 'w-' + parentId,
-          parentId,
-          parentName,
-          depth,
-          words: leaves,
+          key: 'w-' + cat.id,
+          parentId: cat.id,
+          parentName: cat.name,
+          depth: 1,
+          words: second.leaves,
         })
       }
-      for (const cat of cats) {
-        const flat = flatById.get(cat.id)
-        if (flat) {
-          rows.push({ kind: 'category', key: 'c-' + cat.id, node: flat, depth })
-          build(cat.id, cat.name, depth + 1)
-        }
+      for (const sub of second.cats) {
+        const subFlat = flatById.get(sub.id)
+        if (!subFlat) continue
+        // 第三级词汇平铺进第二级行内
+        rows.push({
+          kind: 'subgroup',
+          key: 'sg-' + sub.id,
+          node: subFlat,
+          depth: 1,
+          words: collectLeaves(sub.id),
+        })
       }
     }
 
-    build(activeRootId.value, activeRoot.value?.name ?? '', 0)
     return rows
   })
 

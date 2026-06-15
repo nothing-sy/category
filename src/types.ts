@@ -47,3 +47,10 @@ export type RenderRow =
       depth: number
       words: FlatNode[]
     }
+  | {
+      kind: 'subgroup'
+      key: string
+      node: FlatNode
+      depth: number
+      words: FlatNode[]
+    }
