@@ -15,6 +15,7 @@ import {
 import { ref } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ContentPanel from './components/ContentPanel.vue'
+import Toolbar from './components/Toolbar.vue'
 import { useCategoryStore } from './stores/category'
 
 const store = useCategoryStore()
@@ -40,6 +41,7 @@ onMounted(() => {
               <span>分类词汇工具</span>
             </div>
             <div class="header-actions">
+              <Toolbar />
               <span class="theme-toggle" @click="isDark = !isDark">
                 {{ isDark ? '☀️ 亮色' : '🌙 暗色' }}
               </span>
@@ -84,11 +86,18 @@ onMounted(() => {
   font-size: 22px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .theme-toggle {
   cursor: pointer;
   font-size: 14px;
   user-select: none;
   opacity: 0.8;
+  white-space: nowrap;
 }
 
 .theme-toggle:hover {

@@ -1,1 +1,1 @@
-{"root":["./src/main.ts","./src/types.ts","./src/composables/useflatten.ts","./src/db/index.ts","./src/stores/category.ts","./src/app.vue","./src/components/contentpanel.vue","./src/components/sidebar.vue","./env.d.ts"],"version":"5.9.3"}
+{"root":["./src/main.ts","./src/types.ts","./src/composables/useflatten.ts","./src/db/index.ts","./src/stores/category.ts","./src/utils/gist.ts","./src/app.vue","./src/components/contentpanel.vue","./src/components/sidebar.vue","./src/components/toolbar.vue","./env.d.ts"],"version":"5.9.3"}

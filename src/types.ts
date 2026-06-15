@@ -24,6 +24,14 @@ export interface FlatNode extends Node {
   isLeaf: boolean
 }
 
+/** 导出 / 导入备份文件结构 */
+export interface BackupData {
+  app: 'category-vocab'
+  version: number
+  exportedAt: number
+  nodes: Node[]
+}
+
 /**
  * 右侧渲染行：
  * - category：含子项的分类，作为一行标题

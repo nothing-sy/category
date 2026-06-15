@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { db, genId } from '../db'
-import type { FlatNode, Node, RenderRow } from '../types'
+import type { BackupData, FlatNode, Node, RenderRow } from '../types'
 import { flattenTree } from '../composables/useFlatten'
 
 export const useCategoryStore = defineStore('category', () => {
@@ -265,6 +265,51 @@ export const useCategoryStore = defineStore('category', () => {
     return collectDescendants(id).length - 1
   }
 
+  // ---------- 备份 / 恢复 ----------
+
+  /** 导出全部数据（所有大类及其后代） */
+  async function exportAll(): Promise<BackupData> {
+    const nodes = await db.nodes.toArray()
+    return {
+      app: 'category-vocab',
+      version: 1,
+      exportedAt: Date.now(),
+      nodes,
+    }
+  }
+
+  /**
+   * 导入数据。
+   * - overwrite：清空现有数据后写入（保留原 id）
+   * - merge：重新生成 id 后整体追加为新的大类，不影响现有数据
+   */
+  async function importData(
+    data: BackupData,
+    mode: 'overwrite' | 'merge',
+  ): Promise<number> {
+    const incoming = Array.isArray(data?.nodes) ? data.nodes : []
+    if (mode === 'overwrite') {
+      await db.nodes.clear()
+      if (incoming.length) await db.nodes.bulkAdd(incoming)
+      activeRootId.value = null
+    } else {
+      const idMap = new Map<string, string>()
+      for (const n of incoming) idMap.set(n.id, genId())
+      const remapped: Node[] = incoming.map((n) => {
+        const newId = idMap.get(n.id)!
+        return {
+          ...n,
+          id: newId,
+          parentId: n.parentId ? (idMap.get(n.parentId) ?? n.parentId) : null,
+          rootId: idMap.get(n.rootId) ?? newId,
+        }
+      })
+      if (remapped.length) await db.nodes.bulkAdd(remapped)
+    }
+    await loadRoots()
+    return incoming.length
+  }
+
   return {
     roots,
     activeRootId,
@@ -285,5 +330,7 @@ export const useCategoryStore = defineStore('category', () => {
     renameNode,
     deleteNode,
     countDescendants,
+    exportAll,
+    importData,
   }
 })
