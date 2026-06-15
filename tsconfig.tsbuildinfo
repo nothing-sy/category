@@ -1,0 +1,1 @@
+{"root":["./src/main.ts","./src/types.ts","./src/composables/useflatten.ts","./src/db/index.ts","./src/stores/category.ts","./src/app.vue","./src/components/contentpanel.vue","./src/components/sidebar.vue","./env.d.ts"],"version":"5.9.3"}

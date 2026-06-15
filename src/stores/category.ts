@@ -1,0 +1,289 @@
+import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
+import { db, genId } from '../db'
+import type { FlatNode, Node, RenderRow } from '../types'
+import { flattenTree } from '../composables/useFlatten'
+
+export const useCategoryStore = defineStore('category', () => {
+  /** 全部大类（根节点） */
+  const roots = ref<Node[]>([])
+  /** 当前选中的大类 id */
+  const activeRootId = ref<string | null>(null)
+  /** 当前大类下的全部节点（含根） */
+  const currentNodes = ref<Node[]>([])
+  /** 左侧搜索关键词 */
+  const sidebarKeyword = ref('')
+  /** 右侧搜索关键词 */
+  const contentKeyword = ref('')
+  /** 加载状态 */
+  const loading = ref(false)
+
+  // ---------- 计算属性 ----------
+
+  /** 过滤后的大类列表（左侧搜索） */
+  const filteredRoots = computed(() => {
+    const kw = sidebarKeyword.value.trim().toLowerCase()
+    if (!kw) return roots.value
+    return roots.value.filter((r) => r.name.toLowerCase().includes(kw))
+  })
+
+  const activeRoot = computed(
+    () => roots.value.find((r) => r.id === activeRootId.value) ?? null,
+  )
+
+  /** 当前大类拍平后的全部节点（不含根） */
+  const flatNodes = computed<FlatNode[]>(() => {
+    if (!activeRootId.value) return []
+    return flattenTree(currentNodes.value, activeRootId.value, false)
+  })
+
+  /**
+   * 命中搜索时的可见节点集合（含被命中节点的所有祖先，以保留层级结构）。
+   * 返回 null 表示无搜索、全部可见。
+   */
+  const visibleIdSet = computed<Set<string> | null>(() => {
+    const kw = contentKeyword.value.trim().toLowerCase()
+    if (!kw) return null
+    const byId = new Map(currentNodes.value.map((n) => [n.id, n]))
+    const set = new Set<string>()
+    for (const fn of flatNodes.value) {
+      const hit =
+        fn.name.toLowerCase().includes(kw) ||
+        fn.pathNames.join(' / ').toLowerCase().includes(kw)
+      if (hit) {
+        set.add(fn.id)
+        let cur: Node | undefined = byId.get(fn.id)
+        while (cur && cur.parentId) {
+          set.add(cur.parentId)
+          cur = byId.get(cur.parentId)
+        }
+      }
+    }
+    return set
+  })
+
+  /**
+   * 右侧渲染行：分类作为标题行，其直接词汇平铺成一组。
+   * 词汇组排在同级子分类之前。
+   */
+  const renderRows = computed<RenderRow[]>(() => {
+    if (!activeRootId.value) return []
+
+    const flatById = new Map(flatNodes.value.map((n) => [n.id, n]))
+    const childrenMap = new Map<string | null, Node[]>()
+    for (const n of currentNodes.value) {
+      const list = childrenMap.get(n.parentId) ?? []
+      list.push(n)
+      childrenMap.set(n.parentId, list)
+    }
+    for (const list of childrenMap.values()) {
+      list.sort((a, b) => a.order - b.order || a.createdAt - b.createdAt)
+    }
+
+    const visible = visibleIdSet.value
+    const isVisible = (id: string) => visible === null || visible.has(id)
+    const rows: RenderRow[] = []
+
+    const build = (parentId: string, parentName: string, depth: number) => {
+      const children = (childrenMap.get(parentId) ?? []).filter((c) => isVisible(c.id))
+      const leaves: FlatNode[] = []
+      const cats: Node[] = []
+      for (const child of children) {
+        const isLeaf = (childrenMap.get(child.id) ?? []).length === 0
+        if (isLeaf) {
+          const flat = flatById.get(child.id)
+          if (flat) leaves.push(flat)
+        } else {
+          cats.push(child)
+        }
+      }
+      if (leaves.length) {
+        rows.push({
+          kind: 'words',
+          key: 'w-' + parentId,
+          parentId,
+          parentName,
+          depth,
+          words: leaves,
+        })
+      }
+      for (const cat of cats) {
+        const flat = flatById.get(cat.id)
+        if (flat) {
+          rows.push({ kind: 'category', key: 'c-' + cat.id, node: flat, depth })
+          build(cat.id, cat.name, depth + 1)
+        }
+      }
+    }
+
+    build(activeRootId.value, activeRoot.value?.name ?? '', 0)
+    return rows
+  })
+
+  // ---------- 大类操作 ----------
+
+  async function loadRoots() {
+    loading.value = true
+    try {
+      // IndexedDB 无法按 null 建索引，故全表读取后过滤出根节点（parentId === null）
+      const all = await db.nodes.toArray()
+      const list = all.filter((n) => n.parentId === null)
+      roots.value = list.sort((a, b) => a.order - b.order || a.createdAt - b.createdAt)
+      if (!activeRootId.value && roots.value.length) {
+        await selectRoot(roots.value[0].id)
+      } else if (activeRootId.value) {
+        await loadCurrentNodes()
+      }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function selectRoot(id: string) {
+    activeRootId.value = id
+    contentKeyword.value = ''
+    await loadCurrentNodes()
+  }
+
+  async function addRoot(name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    const now = Date.now()
+    const node: Node = {
+      id: genId(),
+      name: trimmed,
+      parentId: null,
+      rootId: '',
+      order: roots.value.length,
+      createdAt: now,
+      updatedAt: now,
+    }
+    node.rootId = node.id
+    await db.nodes.add(node)
+    roots.value.push(node)
+    await selectRoot(node.id)
+  }
+
+  async function renameRoot(id: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    await db.nodes.update(id, { name: trimmed, updatedAt: Date.now() })
+    const root = roots.value.find((r) => r.id === id)
+    if (root) root.name = trimmed
+    const inCurrent = currentNodes.value.find((n) => n.id === id)
+    if (inCurrent) inCurrent.name = trimmed
+  }
+
+  /** 删除大类及其全部后代 */
+  async function deleteRoot(id: string) {
+    await db.nodes.where('rootId').equals(id).delete()
+    roots.value = roots.value.filter((r) => r.id !== id)
+    if (activeRootId.value === id) {
+      activeRootId.value = roots.value[0]?.id ?? null
+      if (activeRootId.value) {
+        await loadCurrentNodes()
+      } else {
+        currentNodes.value = []
+      }
+    }
+  }
+
+  // ---------- 节点操作 ----------
+
+  async function loadCurrentNodes() {
+    if (!activeRootId.value) {
+      currentNodes.value = []
+      return
+    }
+    currentNodes.value = await db.nodes
+      .where('rootId')
+      .equals(activeRootId.value)
+      .toArray()
+  }
+
+  /** 在 parentId 下新增子节点；parentId 为 null 时表示直接挂在大类下 */
+  async function addNode(name: string, parentId: string | null) {
+    const trimmed = name.trim()
+    if (!trimmed || !activeRootId.value) return
+    const realParentId = parentId ?? activeRootId.value
+    const siblings = currentNodes.value.filter((n) => n.parentId === realParentId)
+    const now = Date.now()
+    const node: Node = {
+      id: genId(),
+      name: trimmed,
+      parentId: realParentId,
+      rootId: activeRootId.value,
+      order: siblings.length,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await db.nodes.add(node)
+    currentNodes.value.push(node)
+  }
+
+  async function renameNode(id: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    await db.nodes.update(id, { name: trimmed, updatedAt: Date.now() })
+    const node = currentNodes.value.find((n) => n.id === id)
+    if (node) node.name = trimmed
+  }
+
+  /** 删除节点及其全部后代 */
+  async function deleteNode(id: string) {
+    const toDelete = collectDescendants(id)
+    await db.nodes.bulkDelete(toDelete)
+    const set = new Set(toDelete)
+    currentNodes.value = currentNodes.value.filter((n) => !set.has(n.id))
+  }
+
+  /** 收集某节点自身 + 所有后代 id */
+  function collectDescendants(id: string): string[] {
+    const result = [id]
+    const childrenMap = new Map<string, string[]>()
+    for (const n of currentNodes.value) {
+      if (n.parentId) {
+        const list = childrenMap.get(n.parentId) ?? []
+        list.push(n.id)
+        childrenMap.set(n.parentId, list)
+      }
+    }
+    const stack = [id]
+    while (stack.length) {
+      const cur = stack.pop()!
+      const children = childrenMap.get(cur) ?? []
+      for (const c of children) {
+        result.push(c)
+        stack.push(c)
+      }
+    }
+    return result
+  }
+
+  /** 统计某节点的后代数量（用于删除确认提示） */
+  function countDescendants(id: string): number {
+    return collectDescendants(id).length - 1
+  }
+
+  return {
+    roots,
+    activeRootId,
+    currentNodes,
+    sidebarKeyword,
+    contentKeyword,
+    loading,
+    filteredRoots,
+    activeRoot,
+    flatNodes,
+    renderRows,
+    loadRoots,
+    selectRoot,
+    addRoot,
+    renameRoot,
+    deleteRoot,
+    addNode,
+    renameNode,
+    deleteNode,
+    countDescendants,
+  }
+})
