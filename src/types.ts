@@ -1,5 +1,5 @@
 /**
- * 统一节点模型：大类 / 子分类 / 词汇 都是 node，靠 parentId 构成无限层级树。
+ * 统一节点模型：大类 / 子分类 / 词汇 都是 node，靠 parentId 构成最多三级的树。
  * - 大类（根节点）：parentId = null，rootId = 自身 id
  * - 其余节点：rootId 指向所属大类，便于按大类一次性查询
  */
@@ -34,7 +34,7 @@ export interface BackupData {
 
 /**
  * 右侧渲染行：
- * - category：含子项的分类，作为一行标题
+ * - category：二级分类，作为一行标题
  * - words：某个父级下的全部叶子词汇，平铺在同一组里
  */
 export type RenderRow =
@@ -44,13 +44,6 @@ export type RenderRow =
       key: string
       parentId: string
       parentName: string
-      depth: number
-      words: FlatNode[]
-    }
-  | {
-      kind: 'subgroup'
-      key: string
-      node: FlatNode
       depth: number
       words: FlatNode[]
     }

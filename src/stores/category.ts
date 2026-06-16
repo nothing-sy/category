@@ -62,10 +62,7 @@ export const useCategoryStore = defineStore('category', () => {
     return set
   })
 
-  /**
-   * 右侧渲染行：分类作为标题行，其直接词汇平铺成一组。
-   * 词汇组排在同级子分类之前。
-   */
+  /** 右侧渲染行：二级分类作为标题，三级词汇在所属二级下合并平铺。 */
   const renderRows = computed<RenderRow[]>(() => {
     if (!activeRootId.value) return []
 
@@ -101,7 +98,7 @@ export const useCategoryStore = defineStore('category', () => {
       return { leaves, cats }
     }
 
-    /** 收集某节点下所有可见的后代叶子词汇（兜底超过三级的数据，统一平铺） */
+    /** 收集某节点下所有可见的后代叶子词汇（旧数据若超过三级，也统一平铺） */
     const collectLeaves = (parentId: string): FlatNode[] => {
       const result: FlatNode[] = []
       const walk = (pid: string) => {
@@ -113,45 +110,29 @@ export const useCategoryStore = defineStore('category', () => {
       return result
     }
 
-    // 第一级：root 的直接子节点
-    const top = splitChildren(activeRootId.value)
-    if (top.leaves.length) {
-      rows.push({
-        kind: 'words',
-        key: 'w-' + activeRootId.value,
-        parentId: activeRootId.value,
-        parentName: activeRoot.value?.name ?? '',
-        depth: 0,
-        words: top.leaves,
-      })
-    }
-    for (const cat of top.cats) {
+    // 一级大类的直接子节点固定作为二级分类，即使暂时没有三级词汇也显示为分区。
+    const secondLevelCats = (childrenMap.get(activeRootId.value) ?? []).filter((c) =>
+      isVisible(c.id),
+    )
+    for (const cat of secondLevelCats) {
       const catFlat = flatById.get(cat.id)
       if (!catFlat) continue
       rows.push({ kind: 'category', key: 'c-' + cat.id, node: catFlat, depth: 0 })
 
-      // 第二级：第一级分类的直接子节点
+      // 二级分类下的三级词汇统一平铺。旧数据若有更深层级，也收集为词汇兜底展示。
       const second = splitChildren(cat.id)
-      if (second.leaves.length) {
+      const words = [...second.leaves]
+      for (const sub of second.cats) {
+        words.push(...collectLeaves(sub.id))
+      }
+      if (words.length) {
         rows.push({
           kind: 'words',
           key: 'w-' + cat.id,
           parentId: cat.id,
           parentName: cat.name,
           depth: 1,
-          words: second.leaves,
-        })
-      }
-      for (const sub of second.cats) {
-        const subFlat = flatById.get(sub.id)
-        if (!subFlat) continue
-        // 第三级词汇平铺进第二级行内
-        rows.push({
-          kind: 'subgroup',
-          key: 'sg-' + sub.id,
-          node: subFlat,
-          depth: 1,
-          words: collectLeaves(sub.id),
+          words,
         })
       }
     }
@@ -240,11 +221,35 @@ export const useCategoryStore = defineStore('category', () => {
       .toArray()
   }
 
+  function getNodeDepth(id: string): number | null {
+    if (id === activeRootId.value) return 0
+
+    const byId = new Map(currentNodes.value.map((n) => [n.id, n]))
+    let cur = byId.get(id)
+    if (!cur) return null
+
+    let depth = 0
+    while (cur?.parentId) {
+      depth += 1
+      cur = byId.get(cur.parentId)
+    }
+    return depth
+  }
+
   /** 在 parentId 下新增子节点；parentId 为 null 时表示直接挂在大类下 */
   async function addNode(name: string, parentId: string | null) {
     const trimmed = name.trim()
-    if (!trimmed || !activeRootId.value) return
+    if (!trimmed || !activeRootId.value) {
+      return { ok: false, message: '名称不能为空' }
+    }
     const realParentId = parentId ?? activeRootId.value
+    const parentDepth = getNodeDepth(realParentId)
+    if (parentDepth === null) {
+      return { ok: false, message: '父级不存在，请刷新后重试' }
+    }
+    if (parentDepth >= 2) {
+      return { ok: false, message: '最多支持三级：一级大类、二级分类、三级词汇' }
+    }
     const siblings = currentNodes.value.filter((n) => n.parentId === realParentId)
     const now = Date.now()
     const node: Node = {
@@ -258,6 +263,7 @@ export const useCategoryStore = defineStore('category', () => {
     }
     await db.nodes.add(node)
     currentNodes.value.push(node)
+    return { ok: true }
   }
 
   async function renameNode(id: string, name: string) {

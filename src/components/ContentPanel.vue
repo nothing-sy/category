@@ -30,7 +30,7 @@ const inputRef = ref<InstanceType<typeof NInput> | null>(null)
 
 const dialogTitle = computed(() => {
   if (editMode.value === 'rename') return '重命名'
-  return parentForAdd.value ? `在「${parentLabel.value}」下添加` : '添加顶级分类 / 词汇'
+  return parentForAdd.value ? `在「${parentLabel.value}」下添加三级词汇` : '添加二级分类'
 })
 
 function focusInput() {
@@ -71,7 +71,11 @@ async function confirmEdit() {
     return
   }
   if (editMode.value === 'add') {
-    await store.addNode(val, parentForAdd.value)
+    const result = await store.addNode(val, parentForAdd.value)
+    if (!result.ok) {
+      message.warning(result.message ?? '添加失败')
+      return
+    }
     message.success('已添加')
   } else if (editingId.value) {
     await store.renameNode(editingId.value, val)
@@ -130,7 +134,7 @@ function highlight(text: string): string {
             <template #prefix>🔍</template>
           </n-input>
           <n-button type="primary" size="small" @click="openAddTop">
-            + 添加顶级分类
+            + 添加二级分类
           </n-button>
         </div>
       </div>
@@ -164,44 +168,6 @@ function highlight(text: string): string {
                   >🗑️</span
                 >
               </span>
-            </div>
-
-            <!-- 第二级分组：label + 第三级词汇行内平铺 -->
-            <div
-              v-else-if="row.kind === 'subgroup'"
-              class="subgroup"
-              :style="{ paddingLeft: 4 + row.depth * 20 + 'px' }"
-            >
-              <span class="subgroup-label">
-                <span
-                  class="subgroup-name"
-                  title="重命名"
-                  @click="openRename(row.node)"
-                  v-html="highlight(row.node.name)"
-                />
-                <span class="subgroup-actions">
-                  <span
-                    class="icon-btn"
-                    title="添加词汇"
-                    @click="openAddUnder(row.node.id, row.node.name)"
-                    >➕</span
-                  >
-                  <span class="icon-btn" title="删除" @click="requestDelete(row.node)"
-                    >🗑️</span
-                  >
-                </span>
-                <span class="subgroup-colon">：</span>
-              </span>
-              <span v-for="w in row.words" :key="w.id" class="word-chip">
-                <span class="word-text" @click="openRename(w)" v-html="highlight(w.name)" />
-                <span class="word-del" title="删除" @click="requestDelete(w)">✕</span>
-              </span>
-              <span
-                class="word-chip add-chip"
-                title="添加词汇"
-                @click="openAddUnder(row.node.id, row.node.name)"
-                >+ 添加</span
-              >
             </div>
 
             <!-- 词汇组：平铺在同一区域 -->
@@ -333,42 +299,6 @@ function highlight(text: string): string {
   gap: 8px;
   padding-top: 4px;
   padding-bottom: 8px;
-}
-
-/* 第二级分组：label + 第三级词汇行内平铺 */
-.subgroup {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  padding-top: 4px;
-  padding-bottom: 8px;
-}
-
-.subgroup-label {
-  display: inline-flex;
-  align-items: baseline;
-  flex-shrink: 0;
-  gap: 6px;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.subgroup-name {
-  cursor: pointer;
-}
-
-.subgroup-colon {
-  opacity: 0.6;
-}
-
-.subgroup-actions {
-  display: none;
-  gap: 6px;
-}
-
-.subgroup-label:hover .subgroup-actions {
-  display: inline-flex;
 }
 
 .word-chip {
