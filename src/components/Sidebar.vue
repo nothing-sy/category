@@ -8,16 +8,23 @@ import {
   NModal,
   NCard,
   NSpace,
+  NIcon,
+  NTooltip,
   useDialog,
   useMessage,
 } from 'naive-ui'
+import {
+  SearchOutline,
+  AddOutline,
+  CreateOutline,
+  TrashOutline,
+} from '@vicons/ionicons5'
 import { useCategoryStore } from '../stores/category'
 
 const store = useCategoryStore()
 const dialog = useDialog()
 const message = useMessage()
 
-// 新增 / 重命名 共用一个弹窗
 const editVisible = ref(false)
 const editMode = ref<'add' | 'rename'>('add')
 const editValue = ref('')
@@ -60,7 +67,6 @@ async function confirmEdit() {
   editVisible.value = false
 }
 
-// 删除大类：双重确认
 function requestDelete(id: string, name: string) {
   const count = store.countDescendants(id)
   dialog.warning({
@@ -98,10 +104,15 @@ function secondConfirm(id: string, name: string) {
         clearable
         size="small"
       >
-        <template #prefix>🔍</template>
+        <template #prefix>
+          <n-icon :component="SearchOutline" />
+        </template>
       </n-input>
       <n-button type="primary" block size="small" class="add-btn" @click="openAdd">
-        + 新增大类
+        <template #icon>
+          <n-icon :component="AddOutline" />
+        </template>
+        新增大类
       </n-button>
     </div>
 
@@ -119,20 +130,29 @@ function secondConfirm(id: string, name: string) {
           :class="{ active: root.id === store.activeRootId }"
           @click="store.selectRoot(root.id)"
         >
-          <span class="root-name">{{ root.name }}</span>
+          <n-tooltip trigger="hover" :disabled="root.name.length <= 12">
+            <template #trigger>
+              <span class="root-name">{{ root.name }}</span>
+            </template>
+            {{ root.name }}
+          </n-tooltip>
           <span class="root-actions" @click.stop>
-            <span
-              class="icon-btn"
-              title="重命名"
-              @click="openRename(root.id, root.name)"
-              >✏️</span
-            >
-            <span
-              class="icon-btn"
-              title="删除"
-              @click="requestDelete(root.id, root.name)"
-              >🗑️</span
-            >
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <span class="icon-btn" @click="openRename(root.id, root.name)">
+                  <n-icon :component="CreateOutline" />
+                </span>
+              </template>
+              重命名
+            </n-tooltip>
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <span class="icon-btn danger" @click="requestDelete(root.id, root.name)">
+                  <n-icon :component="TrashOutline" />
+                </span>
+              </template>
+              删除
+            </n-tooltip>
           </span>
         </li>
       </ul>
@@ -196,19 +216,22 @@ function secondConfirm(id: string, name: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
+  padding: 8px 10px 8px 14px;
   border-radius: 6px;
   cursor: pointer;
   margin-bottom: 2px;
   transition: background 0.15s;
+  border-left: 3px solid var(--sidebar-inactive-border);
+  position: relative;
 }
 
 .root-item:hover {
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--sidebar-hover-bg);
 }
 
 .root-item.active {
-  background: rgba(24, 160, 88, 0.16);
+  background: var(--sidebar-active-bg);
+  border-left-color: var(--cat-accent);
   font-weight: 600;
 }
 
@@ -216,12 +239,15 @@ function secondConfirm(id: string, name: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .root-actions {
   display: none;
-  gap: 6px;
+  gap: 2px;
   flex-shrink: 0;
+  align-items: center;
 }
 
 .root-item:hover .root-actions {
@@ -230,12 +256,22 @@ function secondConfirm(id: string, name: string) {
 
 .icon-btn {
   cursor: pointer;
-  font-size: 13px;
-  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  font-size: 15px;
+  transition: background 0.15s, color 0.15s;
 }
 
 .icon-btn:hover {
-  opacity: 1;
+  background: var(--icon-btn-hover);
+}
+
+.icon-btn.danger:hover {
+  color: #e88080;
 }
 
 .empty {

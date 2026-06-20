@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import {
   NConfigProvider,
   NMessageProvider,
@@ -8,18 +8,40 @@ import {
   NLayoutSider,
   NLayoutHeader,
   NLayoutContent,
+  NSwitch,
+  NIcon,
   darkTheme,
   zhCN,
   dateZhCN,
+  type GlobalThemeOverrides,
 } from 'naive-ui'
 import { ref } from 'vue'
+import { LibraryOutline, MoonOutline, SunnyOutline } from '@vicons/ionicons5'
 import Sidebar from './components/Sidebar.vue'
 import ContentPanel from './components/ContentPanel.vue'
 import Toolbar from './components/Toolbar.vue'
 import { useCategoryStore } from './stores/category'
 
+const THEME_KEY = 'theme-preference'
+
 const store = useCategoryStore()
-const isDark = ref(false)
+const isDark = ref(localStorage.getItem(THEME_KEY) === 'dark')
+
+const themeOverrides: GlobalThemeOverrides = {
+  common: {
+    borderRadius: '8px',
+    primaryColor: '#18a058',
+    primaryColorHover: '#36ad6a',
+    primaryColorPressed: '#0c7a43',
+  },
+}
+
+function applyTheme(dark: boolean) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+  localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light')
+}
+
+watch(isDark, applyTheme, { immediate: true })
 
 onMounted(() => {
   store.loadRoots()
@@ -29,6 +51,7 @@ onMounted(() => {
 <template>
   <n-config-provider
     :theme="isDark ? darkTheme : null"
+    :theme-overrides="themeOverrides"
     :locale="zhCN"
     :date-locale="dateZhCN"
   >
@@ -37,14 +60,24 @@ onMounted(() => {
         <n-layout style="height: 100vh">
           <n-layout-header bordered class="app-header">
             <div class="app-title">
-              <span class="logo">📚</span>
+              <n-icon class="logo-icon" :component="LibraryOutline" />
               <span>分类词汇工具</span>
             </div>
             <div class="header-actions">
               <Toolbar />
-              <span class="theme-toggle" @click="isDark = !isDark">
-                {{ isDark ? '☀️ 亮色' : '🌙 暗色' }}
-              </span>
+              <div class="theme-switch">
+                <n-icon
+                  class="theme-icon"
+                  :component="SunnyOutline"
+                  :class="{ active: !isDark }"
+                />
+                <n-switch v-model:value="isDark" size="small" />
+                <n-icon
+                  class="theme-icon"
+                  :component="MoonOutline"
+                  :class="{ active: isDark }"
+                />
+              </div>
             </div>
           </n-layout-header>
           <n-layout has-sider style="height: calc(100vh - 56px)">
@@ -82,25 +115,30 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.logo {
+.logo-icon {
   font-size: 22px;
+  color: var(--cat-accent);
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 
-.theme-toggle {
-  cursor: pointer;
-  font-size: 14px;
-  user-select: none;
-  opacity: 0.8;
-  white-space: nowrap;
+.theme-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.theme-toggle:hover {
-  opacity: 1;
+.theme-icon {
+  font-size: 16px;
+  color: var(--theme-icon-muted);
+  transition: color 0.2s;
+}
+
+.theme-icon.active {
+  color: var(--cat-accent);
 }
 </style>

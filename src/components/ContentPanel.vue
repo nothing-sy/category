@@ -9,24 +9,54 @@ import {
   NCard,
   NSpace,
   NText,
+  NIcon,
+  NTooltip,
+  NTag,
   useDialog,
   useMessage,
 } from 'naive-ui'
+import {
+  SearchOutline,
+  AddOutline,
+  CreateOutline,
+  TrashOutline,
+  FolderOutline,
+  CloseOutline,
+} from '@vicons/ionicons5'
 import { useCategoryStore } from '../stores/category'
 import type { FlatNode } from '../types'
+
+/** 词汇 chip 颜色轮盘色相数量，与 style.css 中 .word-chip--N 对应 */
+const CHIP_PALETTE_SIZE = 12
 
 const store = useCategoryStore()
 const dialog = useDialog()
 const message = useMessage()
 
-// 新增 / 重命名 共用弹窗
 const editVisible = ref(false)
 const editMode = ref<'add' | 'rename'>('add')
 const editValue = ref('')
-const editingId = ref<string | null>(null) // rename 时为目标 id
-const parentForAdd = ref<string | null>(null) // add 时父节点 id（null = 直接挂大类）
+const editingId = ref<string | null>(null)
+const parentForAdd = ref<string | null>(null)
 const parentLabel = ref('')
 const inputRef = ref<InstanceType<typeof NInput> | null>(null)
+
+/** 将 renderRows 合并为分类区块（标题 + 词汇），便于卡片式布局 */
+const displayBlocks = computed(() => {
+  const blocks: { category: FlatNode; words: FlatNode[] }[] = []
+  let current: { category: FlatNode; words: FlatNode[] } | null = null
+
+  for (const row of store.renderRows) {
+    if (row.kind === 'category') {
+      if (current) blocks.push(current)
+      current = { category: row.node, words: [] }
+    } else if (row.kind === 'words' && current) {
+      current.words = row.words
+    }
+  }
+  if (current) blocks.push(current)
+  return blocks
+})
 
 const dialogTitle = computed(() => {
   if (editMode.value === 'rename') return '重命名'
@@ -46,7 +76,6 @@ function openAddTop() {
   focusInput()
 }
 
-/** 在指定父级下添加（分类标题的“添加子项”，或词汇组末尾的“+”） */
 function openAddUnder(parentId: string, label: string, isRoot = false) {
   editMode.value = 'add'
   parentForAdd.value = isRoot ? null : parentId
@@ -101,7 +130,6 @@ function requestDelete(node: FlatNode) {
   })
 }
 
-// ---------- 搜索高亮 ----------
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -112,6 +140,10 @@ function highlight(text: string): string {
   if (!kw) return safe
   const escapedKw = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return safe.replace(new RegExp(`(${escapedKw})`, 'ig'), '<mark>$1</mark>')
+}
+
+function chipColorClass(index: number): string {
+  return `word-chip--${index % CHIP_PALETTE_SIZE}`
 }
 </script>
 
@@ -131,69 +163,92 @@ function highlight(text: string): string {
             size="small"
             style="width: 220px"
           >
-            <template #prefix>🔍</template>
+            <template #prefix>
+              <n-icon :component="SearchOutline" />
+            </template>
           </n-input>
           <n-button type="primary" size="small" @click="openAddTop">
-            + 添加二级分类
+            <template #icon>
+              <n-icon :component="AddOutline" />
+            </template>
+            添加二级分类
           </n-button>
         </div>
       </div>
 
       <n-scrollbar class="content-list">
         <n-empty
-          v-if="store.renderRows.length === 0"
+          v-if="displayBlocks.length === 0"
           :description="store.contentKeyword ? '没有匹配的结果' : '还没有内容，点击右上角添加'"
           class="empty"
         />
-        <div v-else class="rows">
-          <template v-for="row in store.renderRows" :key="row.key">
-            <!-- 分类标题行 -->
-            <div
-              v-if="row.kind === 'category'"
-              class="cat-header"
-              :style="{ paddingLeft: 4 + row.depth * 20 + 'px' }"
-            >
-              <span class="cat-name" v-html="highlight(row.node.name)" />
+        <div v-else class="blocks">
+          <div v-for="block in displayBlocks" :key="block.category.id" class="cat-block">
+            <div class="cat-header">
+              <n-icon class="cat-folder" :component="FolderOutline" />
+              <span class="cat-name" v-html="highlight(block.category.name)" />
+              <n-tag size="small" :bordered="false" class="cat-count">
+                {{ block.words.length }}
+              </n-tag>
               <span class="cat-actions">
-                <span
-                  class="icon-btn"
-                  title="添加子项"
-                  @click="openAddUnder(row.node.id, row.node.name)"
-                  >➕</span
-                >
-                <span class="icon-btn" title="重命名" @click="openRename(row.node)"
-                  >✏️</span
-                >
-                <span class="icon-btn" title="删除" @click="requestDelete(row.node)"
-                  >🗑️</span
-                >
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <span
+                      class="icon-btn"
+                      @click="openAddUnder(block.category.id, block.category.name)"
+                    >
+                      <n-icon :component="AddOutline" />
+                    </span>
+                  </template>
+                  添加词汇
+                </n-tooltip>
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <span class="icon-btn" @click="openRename(block.category)">
+                      <n-icon :component="CreateOutline" />
+                    </span>
+                  </template>
+                  重命名
+                </n-tooltip>
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <span class="icon-btn danger" @click="requestDelete(block.category)">
+                      <n-icon :component="TrashOutline" />
+                    </span>
+                  </template>
+                  删除
+                </n-tooltip>
               </span>
             </div>
 
-            <!-- 词汇组：平铺在同一区域 -->
-            <div
-              v-else
-              class="words-group"
-              :style="{ paddingLeft: 4 + row.depth * 20 + 'px' }"
-            >
-              <span v-for="w in row.words" :key="w.id" class="word-chip">
+            <div v-if="block.words.length" class="words-group">
+              <span
+                v-for="(w, i) in block.words"
+                :key="w.id"
+                class="word-chip"
+                :class="chipColorClass(i)"
+              >
                 <span class="word-text" @click="openRename(w)" v-html="highlight(w.name)" />
-                <span class="word-del" title="删除" @click="requestDelete(w)">✕</span>
+                <span class="word-del" @click="requestDelete(w)">
+                  <n-icon :component="CloseOutline" />
+                </span>
               </span>
               <span
                 class="word-chip add-chip"
-                title="添加词汇"
-                @click="
-                  openAddUnder(
-                    row.parentId,
-                    row.parentName,
-                    row.parentId === store.activeRootId,
-                  )
-                "
-                >+ 添加</span
+                @click="openAddUnder(block.category.id, block.category.name)"
               >
+                <n-icon :component="AddOutline" />
+                添加
+              </span>
             </div>
-          </template>
+            <div
+              v-else
+              class="empty-words"
+              @click="openAddUnder(block.category.id, block.category.name)"
+            >
+              暂无词汇，点击添加
+            </div>
+          </div>
         </div>
       </n-scrollbar>
     </template>
@@ -233,7 +288,7 @@ function highlight(text: string): string {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.18);
+  border-bottom: 1px solid var(--content-header-border);
   flex-wrap: wrap;
 }
 
@@ -263,53 +318,74 @@ function highlight(text: string): string {
   min-height: 0;
 }
 
-.rows {
-  padding: 10px 14px 40px;
+.blocks {
+  padding: 12px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-/* 分类标题 */
+.cat-block {
+  border: 1px solid var(--cat-block-border);
+  border-left: 3px solid var(--cat-accent);
+  border-radius: 8px;
+  background: var(--words-area-bg);
+  overflow: hidden;
+}
+
 .cat-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-top: 14px;
-  padding-bottom: 6px;
-  border-bottom: 1px dashed rgba(128, 128, 128, 0.25);
-  margin-bottom: 6px;
+  padding: 10px 12px;
+  background: var(--cat-header-bg);
+  border-bottom: 1px solid var(--cat-block-border);
+}
+
+.cat-folder {
+  font-size: 16px;
+  color: var(--cat-accent);
+  flex-shrink: 0;
 }
 
 .cat-name {
   font-size: 15px;
   font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.cat-count {
+  background: var(--cat-count-bg) !important;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .cat-actions {
-  display: none;
-  gap: 8px;
-}
-
-.cat-header:hover .cat-actions {
   display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+  align-items: center;
 }
 
-/* 词汇组 */
 .words-group {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding-top: 4px;
-  padding-bottom: 8px;
+  padding: 10px 12px 12px;
+  background: var(--words-area-bg);
 }
 
 .word-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 10px;
-  border-radius: 14px;
-  background: rgba(128, 128, 128, 0.12);
+  padding: 5px 14px;
+  border-radius: 999px;
   font-size: 13px;
+  font-weight: 600;
   line-height: 1.5;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, color 0.15s;
 }
 
 .word-text {
@@ -318,40 +394,61 @@ function highlight(text: string): string {
 
 .word-del {
   cursor: pointer;
-  opacity: 0;
-  font-size: 11px;
-  transition: opacity 0.15s;
-}
-
-.word-chip:hover .word-del {
-  opacity: 0.6;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--word-del-color);
+  transition: color 0.15s;
 }
 
 .word-del:hover {
-  opacity: 1 !important;
+  color: #e88080;
 }
 
 .add-chip {
   cursor: pointer;
-  background: transparent;
-  border: 1px dashed rgba(128, 128, 128, 0.5);
-  opacity: 0.75;
+  background: var(--words-area-bg);
+  border: 1px dashed var(--chip-add-border);
+  color: var(--cat-accent);
+  font-weight: 400;
 }
 
 .add-chip:hover {
-  opacity: 1;
-  border-color: #18a058;
-  color: #18a058;
+  background: var(--chip-add-hover-bg);
+  border-color: var(--cat-accent);
+}
+
+.empty-words {
+  padding: 10px 12px 14px;
+  font-size: 13px;
+  color: var(--empty-placeholder-color);
+  cursor: pointer;
+  background: var(--words-area-bg);
+  transition: color 0.15s;
+}
+
+.empty-words:hover {
+  color: var(--cat-accent);
 }
 
 .icon-btn {
   cursor: pointer;
-  font-size: 13px;
-  opacity: 0.75;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  font-size: 15px;
+  transition: background 0.15s, color 0.15s;
 }
 
 .icon-btn:hover {
-  opacity: 1;
+  background: var(--icon-btn-hover);
+}
+
+.icon-btn.danger:hover {
+  color: #e88080;
 }
 
 .empty {
@@ -360,12 +457,5 @@ function highlight(text: string): string {
 
 .no-root {
   margin-top: 120px;
-}
-
-:deep(mark) {
-  background: #ffe58f;
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 1px;
 }
 </style>

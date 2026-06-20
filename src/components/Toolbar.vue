@@ -9,9 +9,11 @@ import {
   NText,
   NAlert,
   NDivider,
+  NIcon,
   useDialog,
   useMessage,
 } from 'naive-ui'
+import { CloudUploadOutline } from '@vicons/ionicons5'
 import { useCategoryStore } from '../stores/category'
 import type { BackupData } from '../types'
 import {
@@ -28,7 +30,6 @@ const message = useMessage()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 
-// ---------- 导出 ----------
 async function onExport() {
   const data = await store.exportAll()
   const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -44,7 +45,6 @@ async function onExport() {
   message.success('已导出备份文件')
 }
 
-// ---------- 导入 ----------
 function triggerImport() {
   fileInput.value?.click()
 }
@@ -98,7 +98,6 @@ function confirmOverwrite(data: BackupData) {
   })
 }
 
-// ---------- Gist 同步 ----------
 const gistVisible = ref(false)
 const gistConfig = ref<GistConfig>(loadGistConfig())
 const busy = ref(false)
@@ -163,7 +162,12 @@ function onPull() {
   <n-space :size="8">
     <n-button size="small" tertiary @click="onExport">导出</n-button>
     <n-button size="small" tertiary @click="triggerImport">导入</n-button>
-    <n-button size="small" tertiary @click="openGist">☁️ 同步</n-button>
+    <n-button size="small" tertiary @click="openGist">
+      <template #icon>
+        <n-icon :component="CloudUploadOutline" />
+      </template>
+      同步
+    </n-button>
     <input
       ref="fileInput"
       type="file"
